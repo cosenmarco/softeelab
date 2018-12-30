@@ -1,0 +1,9 @@
+[package]
+name = "softeelab"
+version = "0.1.0"
+authors = ["Marco Cosentino <cosentino.ma@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+yaml-rust = "0.4.2"
+clap = "2.32.0"
