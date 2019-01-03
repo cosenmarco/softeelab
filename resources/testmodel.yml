@@ -1,0 +1,19 @@
+---
+  # TODO: imports
+  blocks:
+    - id: gen_001
+      impl: EventGenerator
+      config:
+        event_type: TriggerEvent
+        frequency: 0.5
+    - id: sink_001
+      impl: LoggingSink
+    
+  connections:
+    - from:
+        block: gen_001
+        port: out
+      to:
+        - block: sink_001
+          port: in
+        
