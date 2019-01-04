@@ -1,8 +1,10 @@
-use crate::core::Block;
-use crate::core::Port;
+use super::core::*;
 use yaml_rust::{Yaml, yaml::Hash};
 
 use std::collections::HashMap;
+
+/// Here the Block implementations and a factory to build the various blocks
+/// starting from configuration
 
 pub fn build_block(block_yaml: &Yaml) -> Result<Box<dyn Block>, String> {
     debug!("{:?}", block_yaml);
@@ -25,15 +27,18 @@ pub fn build_block(block_yaml: &Yaml) -> Result<Box<dyn Block>, String> {
 
 struct EventGenerator {
     id: String,
-    ports: HashMap<String, Port>
+    in_ports: HashMap<String, InputPort>,
+    out_ports: HashMap<String, OutputPort>
 }
 
 impl EventGenerator {
     pub fn new(id: String, config: Option<&Hash>) -> Self {
-        let ports = HashMap::new();
+        let mut out_ports = HashMap::new();
+        out_ports.insert("out".to_string(), OutputPort::new());
         EventGenerator {
             id,
-            ports
+            in_ports: HashMap::new(),
+            out_ports
         }
     }
 }
@@ -41,6 +46,14 @@ impl EventGenerator {
 impl Block for EventGenerator {
     fn id(&self) -> &str {
         &self.id
+    }
+    
+    fn input_ports(&self) -> &HashMap<String, InputPort> {
+        &self.in_ports
+    }
+
+    fn output_ports(&self) -> &HashMap<String, OutputPort> {
+        &self.out_ports
     }
 
     fn init(&self) {
@@ -51,18 +64,20 @@ impl Block for EventGenerator {
     }
 }
 
-
 struct LoggingSink {
     id: String,
-    ports: HashMap<String, Port>
+    in_ports: HashMap<String, InputPort>,
+    out_ports: HashMap<String, OutputPort>
 }
 
 impl LoggingSink {
     pub fn new(id: String, config: Option<&Hash>) -> Self {
-        let ports = HashMap::new();
+        let mut in_ports = HashMap::new();
+        in_ports.insert("in".to_string(), InputPort::new());
         LoggingSink {
             id,
-            ports
+            in_ports,
+            out_ports: HashMap::new()
         }
     }
 }
@@ -70,6 +85,14 @@ impl LoggingSink {
 impl Block for LoggingSink {
     fn id(&self) -> &str {
         &self.id
+    }
+    
+    fn input_ports(&self) -> &HashMap<String, InputPort> {
+        &self.in_ports
+    }
+
+    fn output_ports(&self) -> &HashMap<String, OutputPort> {
+        &self.out_ports
     }
 
     fn init(&self) {

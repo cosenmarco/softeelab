@@ -8,6 +8,8 @@
         frequency: 0.5
     - id: sink_001
       impl: LoggingSink
+    - id: sink_002
+      impl: LoggingSink
     
   connections:
     - from:
@@ -15,5 +17,7 @@
         port: out
       to:
         - block: sink_001
+          port: in
+        - block: sink_002
           port: in
         

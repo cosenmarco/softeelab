@@ -3,11 +3,11 @@ extern crate log;
 extern crate simple_logger;
 
 use clap::ArgMatches;
-use yaml_rust::{YamlLoader, Yaml};
+use yaml_rust::YamlLoader;
 use std::fs;
 
-mod core;
-mod blocks;
+mod model;
+use crate::model::Model;
 
 pub fn run(matches: ArgMatches) {
     let model_file = matches.value_of("model").unwrap();
@@ -27,29 +27,3 @@ pub fn run(matches: ArgMatches) {
     model.stop();
 }
 
-pub struct Model {
-    blocks: Vec<Box<dyn core::Block>>
-}
-
-impl Model {
-    fn new(model_doc: &Yaml) -> Result<Self, String> {
-        let blocks_vec = model_doc["blocks"].as_vec().unwrap();
-        let blocks: Result<Vec<_>, _> = blocks_vec.iter()
-            .map(|block_yaml| blocks::build_block(block_yaml))
-            .collect();
-        match blocks {
-            Ok(blocks) => Ok(Model{ 
-                    blocks 
-                }),
-            Err(err) => Err(err)
-        }
-    }
-
-    fn run(&self) {
-        println!("RUN!");
-    }
-
-    fn stop(&self) {
-        println!("STOP");
-    }
-}
