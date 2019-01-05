@@ -1,27 +1,23 @@
 use super::core::*;
-use yaml_rust::{Yaml, yaml::Hash};
+use super::*;
 
 use std::collections::HashMap;
 
 /// Here the Block implementations and a factory to build the various blocks
 /// starting from configuration
 
-pub fn build_block(block_yaml: &Yaml) -> Result<Box<dyn Block>, String> {
-    debug!("{:?}", block_yaml);
-    let config_yaml = block_yaml["config"].as_hash();
-    let block_id = match block_yaml["id"].as_str() {
-        Some(string) => string.to_owned(),
-        None => return Err("Every block must have an id".to_string())
-    };
-    match block_yaml["impl"].as_str() {
-        Some("EventGenerator") => Ok(Box::new(
-                EventGenerator::new(block_id, config_yaml)
+pub fn build_block(block_def: ModelDefBlock) -> Result<Box<dyn Block>, String> {
+    debug!("{:?}", block_def);
+    let id = block_def.id;
+    match block_def.implementation.as_ref() {
+        "EventGenerator" => match block_def.configuration {
+            ModelDefBlockConfig::EventGenerator(config) => Ok(Box::new(
+                EventGenerator::new(id, config)
             )),
-        Some("LoggingSink") => Ok(Box::new(
-                LoggingSink::new(block_id, config_yaml)
-            )),
-        Some(implem) => Err(format!("Unknown impl {} for block {}", implem, block_id)),
-        None => Err(format!("Must specify an implementation for block {}", block_id))
+            _ => Err("Expected EventGenerator config".to_string())
+        },
+        "LoggingSink" => Ok(Box::new(LoggingSink::new(id))),
+        implem => Err(format!("Unknown impl {} for block {}", implem, id))
     }
 }
 
@@ -32,7 +28,8 @@ struct EventGenerator {
 }
 
 impl EventGenerator {
-    pub fn new(id: String, config: Option<&Hash>) -> Self {
+    pub fn new(id: String, config: ModelDefEventGeneratorConfiguration) -> Self {
+        debug!("EventGenerator: {:?}", config);
         let mut out_ports = HashMap::new();
         out_ports.insert("out".to_string(), OutputPort::new());
         EventGenerator {
@@ -71,7 +68,8 @@ struct LoggingSink {
 }
 
 impl LoggingSink {
-    pub fn new(id: String, config: Option<&Hash>) -> Self {
+    pub fn new(id: String) -> Self {
+        debug!("LoggingSink");
         let mut in_ports = HashMap::new();
         in_ports.insert("in".to_string(), InputPort::new());
         LoggingSink {

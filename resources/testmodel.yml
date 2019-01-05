@@ -2,14 +2,14 @@
   # TODO: imports
   blocks:
     - id: gen_001
-      impl: EventGenerator
-      config:
+      implementation: EventGenerator
+      configuration:
         event_type: TriggerEvent
-        frequency: 0.5
+        frequency: 3
     - id: sink_001
-      impl: LoggingSink
+      implementation: LoggingSink
     - id: sink_002
-      impl: LoggingSink
+      implementation: LoggingSink
     
   connections:
     - from:
