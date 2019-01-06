@@ -10,7 +10,7 @@ use std::sync::{Mutex, Arc};
 /// Here the basic building blocks of the Model
 
 pub struct Model {
-    blocks: HashMap<String, BoxedBlock>,
+    blocks: Vec<ModelDefBlock>,
     connections: Vec<ModelDefConnection>,
     system_channels: Vec<Sender<Event>>,
     threads: Vec<JoinHandle<()>>
@@ -18,11 +18,7 @@ pub struct Model {
 
 impl Model {
     pub fn new(model_def: ModelDef) -> Result<Self, String> {
-        let mut blocks: HashMap<String, BoxedBlock> = HashMap::new();
-        for block_def in model_def.blocks {
-            let block = blocks::build_block(block_def)?;
-            blocks.insert(block.id().to_string(), block);
-        }
+        let blocks = model_def.blocks;
         let connections = model_def.connections;
         Ok(Model {
             blocks,
@@ -34,9 +30,10 @@ impl Model {
 
     pub fn run(&mut self) -> Result<(), String> {
         println!("RUN!");
-        self.create_channels()?;
-        self.init_blocks();
-        self.start_threads();
+        let mut blocks = self.create_blocks();
+        let mut ports = self.create_ports(blocks.keys().collect())?;
+        Model::init_blocks(&mut blocks);
+        self.start_threads(&mut blocks, &mut ports);
         self.send_start_events();
         Ok(())
     }
@@ -49,96 +46,122 @@ impl Model {
         self.shudown_blocks();
     }
 
-    fn create_channels(&mut self) -> Result<(), String> {
-        // for connection in &mut self.connections {
-        //     for destination in &mut connection.to {
-        //         let (sender, receiver): (Sender<Event>, Receiver<Event>) = mpsc::channel();
-        //         let (from_block, to_block) = self.get_blocks(&connection.from.block, &destination.block)?;
-        //         let (from_port, to_port) = Model::get_ports(from_block, &connection.from.port, 
-        //             to_block, &destination.port)?;
-        //         from_port.add_sender(sender);
-        //         to_port.set_receiver(receiver);
-        //     }
-        // }
-        // for block in &mut self.blocks {
-        //     let (sender, receiver): (Sender<Event>, Receiver<Event>) = mpsc::channel();
-        //     block.1.system_port().set_receiver(receiver);
-        //     self.system_channels.push(sender);
-        // }
-        Ok(())
+    fn create_blocks(&self) -> HashMap<String, BoxedBlock> {
+        self.blocks.iter()
+            .map(|block_def| {
+                let block = blocks::build_block(block_def);
+                (block.id().to_owned(), block)
+            })
+            .collect()
     }
 
-    // fn get_blocks(&self, from_id: &str, to_id: &str) 
-    //             -> Result<(&BoxedBlock, &BoxedBlock), String> {
-    //     if let Some(from_block) = self.blocks.get(from_id) {
-    //         if let Some(to_block) = self.blocks.get(to_id) {
-    //             Ok((from_block, to_block))
-    //         } else {
-    //             Err(format!("Cannot find block {}", to_id))
-    //         }
-    //     } else {
-    //         Err(format!("Cannot find block {}", from_id))
-    //     }
-    // }
-
-    // fn get_ports<'a, 'b>(from: &'a BoxedBlock, from_port_id: &str, to: &'b BoxedBlock, to_port_id: &str) 
-    //             -> Result<(&'a OutputPort, &'b InputPort), String> {
-    //     let from_port = from.output_ports().get(from_port_id);
-    //     let to_port = to.input_ports().get(to_port_id);
-    //     if let None = from_port {
-    //         Err(format!("Cannot find port {} in block {}", from_port_id, from.id()))
-    //     } else if let None = from_port {
-    //         return Err(format!("Cannot find port {} in block {}", from_port_id, from.id()));
-    //     } else {
-    //         Ok((from_port.unwrap(), to_port.unwrap()))
-    //     }
-    // }
-
-    fn init_blocks(&self) {
-        for block in &self.blocks {
-            block.1.init();
+    fn init_blocks(blocks: &mut HashMap<String, BoxedBlock>) {
+        for block in blocks.values() {
+            block.init();
         }
     }
 
-    fn start_threads(&mut self) {
+    fn create_ports(&mut self, block_ids: Vec<&String>) -> Result<HashMap<String, BlockPorts>, String> {
+        let mut result: HashMap<String, BlockPorts> = HashMap::new();
+        for block in block_ids {
+            result.insert(block.to_owned(), BlockPorts{
+                system_port: InputPort::new(),
+                input_ports: HashMap::new(),
+                output_ports: HashMap::new()
+            });
+        }
+        for connection in &self.connections {
+            for destination in &connection.to {
+                let (sender, receiver): (Sender<Event>, Receiver<Event>) = mpsc::channel();
+
+                {
+                    let from_block_ports = result.get_mut(&connection.from.block)
+                        .ok_or(format!("Cannot find block {} to build connection from {:?}",
+                                &connection.from.block, connection.from))?;
+
+                    let from_port = from_block_ports.output_ports
+                        .entry(connection.from.port.to_owned())
+                        .or_insert(OutputPort::new());
+
+                    from_port.add_sender(sender);
+                }
+
+                {
+                    let to_block_ports = result.get_mut(&destination.block)
+                        .ok_or(format!("Cannot find block {} to build connection to {:?}",
+                            &connection.from.block, destination))?;
+
+                    let to_port = to_block_ports.input_ports
+                        .entry(destination.port.to_owned())
+                        .or_insert(InputPort::new());
+
+                    to_port.set_receiver(receiver);
+                }
+            }
+        }
+        Ok(result)
     }
 
-    fn send_start_events(&self) {
+    fn start_threads(&mut self, all_blocks: &mut HashMap<String, BoxedBlock>, all_ports: &mut HashMap<String, BlockPorts>) {
+        for block_entry in all_blocks.drain() {
+            let (sender, receiver): (Sender<Event>, Receiver<Event>) = mpsc::channel();
+            self.system_channels.push(sender);
+            let mut ports = all_ports.remove(&block_entry.0).unwrap();
+            let block = block_entry.1;
+            ports.system_port.set_receiver(receiver);
+            self.threads.push(thread::spawn(move || {
+                debug!("Start thread for {}", block.id());
+                block.thread_executor(ports);
+            }));
+        }
     }
 
-    fn send_stop_events(&self) {
+    fn send_start_events(&mut self) {
+        debug!("Sending start events for {} channels", self.system_channels.len());
+        for system_channel in self.system_channels.iter_mut() {
+            system_channel.send(Event::new(EventType::Start)).unwrap();
+        }
+    }
+
+    fn send_stop_events(&mut self) {
+        for system_channel in self.system_channels.iter_mut() {
+            system_channel.send(Event::new(EventType::Stop)).unwrap();
+        }
     }
 
     fn close_system_channels(&mut self) {
         self.system_channels = Vec::new();
     }
 
-    fn join_threads(&self) {
+    fn join_threads(&mut self) {
+        for thread in self.threads.drain(..) {
+            thread.join().unwrap();
+        }
     }
 
     fn shudown_blocks(&self) {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ModelDef {
     pub blocks: Vec<ModelDefBlock>,
     pub connections: Vec<ModelDefConnection>
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ModelDefConnection {
     pub from: ModelDefConnectionPort,
     pub to: Vec<ModelDefConnectionPort>
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ModelDefConnectionPort {
     pub block: String,
     pub port: String
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ModelDefBlock {
     pub id: String,
     //pub implementation: String,
@@ -146,14 +169,14 @@ pub struct ModelDefBlock {
     pub configuration: ModelDefBlockConfig
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(tag = "implementation", content = "configuration")]
 pub enum ModelDefBlockConfig {
     EventGenerator(ModelDefEventGeneratorConfiguration),
     LoggingSink
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ModelDefEventGeneratorConfiguration {
     pub event_type: String,
     pub frequency: f64

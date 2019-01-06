@@ -11,6 +11,8 @@ use std::fs;
 mod model;
 use crate::model::*;
 
+use std::thread;
+
 pub fn run(matches: ArgMatches) {
     let model_file = matches.value_of("model").unwrap();
     info!("Model file is {}", model_file);
@@ -65,7 +67,8 @@ pub fn run(matches: ArgMatches) {
     // };
 
     let mut model = Model::new(deserialized_model_def).unwrap();
-    model.run();
+    model.run().unwrap();
+    thread::sleep_ms(10000);
     model.stop();
 }
 

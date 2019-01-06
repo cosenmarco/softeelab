@@ -2,28 +2,41 @@ use std::collections::HashMap;
 use std::sync::mpsc::{Sender, Receiver, TryRecvError};
 
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum EventType {
     Start,
     Stop,
     Trigger
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Event {
     pub timestamp: f64,
     pub corrected_timestamp: f64,
     pub event_type: EventType
-    // event metadata
-    // event data
+    // TODO event metadata
+    // TODO event data
+}
+
+impl Event {
+    pub fn new(event_type: EventType) -> Self {
+        Event {
+            timestamp: 0.0,
+            corrected_timestamp: 0.0,
+            event_type
+        }
+    }
+}
+
+pub struct BlockPorts {
+    pub system_port: InputPort,
+    pub input_ports: HashMap<String, InputPort>,
+    pub output_ports: HashMap<String, OutputPort>
 }
 
 pub trait Block {
     fn id(&self) -> &str;
-    fn system_port(&self) -> &InputPort;
-    fn input_ports(&self) -> HashMap<String, &InputPort>;
-    fn output_ports(&self) -> HashMap<String, &OutputPort>;
-    fn thread_executor(&self);
+    fn thread_executor(&self, ports: BlockPorts);
     fn init(&self);
     fn shutdown(&self);
 }
@@ -49,10 +62,6 @@ impl OutputPort {
         self.senders.push(sender)
     }
 
-    pub fn clear(&mut self) {
-        self.senders = Vec::new();
-    }
-
     pub fn send(&self, event: Event) {
         for sender in &self.senders {
             sender.send(event);
@@ -67,19 +76,9 @@ impl InputPort {
         }
     }
 
-    pub fn set_receiver(&mut self, receiver: Receiver<Event>) -> Result<(), String> {
-        if self.receiver.is_some() {
-            Err("Receiver already set".to_string())
-        } else {
-            self.receiver = Some(receiver);
-            Ok(())
-        }
+    pub fn set_receiver(&mut self, receiver: Receiver<Event>) {
+        self.receiver = Some(receiver);
     }
-
-    pub fn clear(&mut self) {
-        self.receiver = None;
-    }
-
 
     pub fn receive(&self) -> Result<Event, TryRecvError> {
         match &self.receiver {

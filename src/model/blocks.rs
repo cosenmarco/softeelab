@@ -7,21 +7,19 @@ use std::sync::mpsc::TryRecvError;
 /// Here the Block implementations and a factory to build the various blocks
 /// starting from configuration
 
-pub fn build_block(block_def: ModelDefBlock) -> Result<BoxedBlock, String> {
+pub fn build_block(block_def: &ModelDefBlock) -> BoxedBlock {
     debug!("{:?}", block_def);
-    let id = block_def.id;
-    match block_def.configuration {
-        ModelDefBlockConfig::EventGenerator(config) => Ok(Box::new(
-                EventGenerator::new(id, config)
-        )),
-        ModelDefBlockConfig::LoggingSink => Ok(Box::new(LoggingSink::new(id)))
+    let id = block_def.id.to_owned();
+    match &block_def.configuration {
+        ModelDefBlockConfig::EventGenerator(config) => 
+            Box::new(EventGenerator::new(id, config.clone())),
+        ModelDefBlockConfig::LoggingSink => Box::new(LoggingSink::new(id))
     }
 }
 
 struct EventGenerator {
     id: String,
-    system_port: InputPort,
-    out_port: OutputPort
+    config: ModelDefEventGeneratorConfiguration
 }
 
 impl EventGenerator {
@@ -29,8 +27,7 @@ impl EventGenerator {
         debug!("EventGenerator: {:?}", config);
         EventGenerator {
             id,
-            system_port: InputPort::new(),
-            out_port: OutputPort::new()
+            config
         }
     }
 }
@@ -39,16 +36,6 @@ impl Block for EventGenerator {
     fn id(&self) -> &str {
         &self.id
     }
-    
-    fn input_ports(&self) -> HashMap<String, &InputPort> {
-        HashMap::new()
-    }
-
-    fn output_ports(&self) -> HashMap<String, &OutputPort> {
-        let mut map = HashMap::new();
-        map.insert("out".to_string(), &self.out_port);
-        map
-    }
 
     fn init(&self) {
     }
@@ -56,13 +43,10 @@ impl Block for EventGenerator {
     fn shutdown(&self) {
     }
 
-    fn system_port(&self) -> &InputPort {
-        &self.system_port
-    }
-
-    fn thread_executor(&self) {
+    fn thread_executor(&self, ports: BlockPorts) {
+        let out_port = ports.output_ports.get("out").unwrap();
         loop {
-            match self.system_port.receive() {
+            match ports.system_port.receive() {
                 Ok(system_event) => match system_event.event_type {
                     EventType::Start => debug!("EventGenerator {} Start Event", self.id()),
                     EventType::Stop => {
@@ -71,7 +55,7 @@ impl Block for EventGenerator {
                         },
                     _ => ()
                 },
-                Err(TryRecvError::Empty) => self.process(),
+                Err(TryRecvError::Empty) => self.process(out_port),
                 Err(TryRecvError::Disconnected) => return
             }
             thread::yield_now();
@@ -80,14 +64,13 @@ impl Block for EventGenerator {
 }
 
 impl EventGenerator {
-    fn process(&self) {
+    fn process(&self, out_port: &OutputPort) {
+        // TODO
     }
 }
 
 struct LoggingSink {
-    id: String,
-    system_port: InputPort,
-    in_port: InputPort
+    id: String
 }
 
 impl LoggingSink {
@@ -96,9 +79,7 @@ impl LoggingSink {
         let mut in_ports = HashMap::new();
         in_ports.insert("in".to_string(), InputPort::new());
         LoggingSink {
-            id,
-            system_port: InputPort::new(),
-            in_port: InputPort::new()
+            id
         }
     }
 }
@@ -107,16 +88,6 @@ impl Block for LoggingSink {
     fn id(&self) -> &str {
         &self.id
     }
-    
-    fn input_ports(&self) -> HashMap<String, &InputPort> {
-        let mut map = HashMap::new();
-        map.insert("in".to_string(), &self.in_port);
-        map
-    }
-
-    fn output_ports(&self) -> HashMap<String, &OutputPort> {
-        HashMap::new()
-    }
 
     fn init(&self) {
     }
@@ -124,20 +95,17 @@ impl Block for LoggingSink {
     fn shutdown(&self) {
     }
 
-    fn system_port(&self) -> &InputPort {
-        &self.system_port
-    }
-
-    fn thread_executor(&self) {
+    fn thread_executor(&self, ports: BlockPorts) {
+        let _in_port = ports.input_ports.get("in").unwrap();
         loop {
-            match self.system_port.receive() {
+            match ports.system_port.receive() {
                 Ok(system_event) => match system_event.event_type {
                     EventType::Start => debug!("LoggingSink {} Start Event", self.id()),
                     EventType::Stop => {
                             debug!("LoggingSink {} Stop Event", self.id());
                             return
                         },
-                    _ => ()
+                    _ => thread::yield_now()
                 },
                 Err(TryRecvError::Empty) => thread::yield_now(),
                 Err(TryRecvError::Disconnected) => return
