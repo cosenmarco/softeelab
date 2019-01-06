@@ -4,25 +4,31 @@ use std::sync::mpsc::{Sender, Receiver, TryRecvError};
 
 #[derive(Copy, Clone)]
 pub enum EventType {
+    Start,
+    Stop,
     Trigger
 }
 
 #[derive(Copy, Clone)]
 pub struct Event {
-    timestamp: f64,
-    corrected_timestamp: f64,
-    event_type: EventType
+    pub timestamp: f64,
+    pub corrected_timestamp: f64,
+    pub event_type: EventType
     // event metadata
     // event data
 }
 
 pub trait Block {
     fn id(&self) -> &str;
-    fn input_ports(&self) -> &HashMap<String, InputPort>;
-    fn output_ports(&self) -> &HashMap<String, OutputPort>;
+    fn system_port(&self) -> &InputPort;
+    fn input_ports(&self) -> HashMap<String, &InputPort>;
+    fn output_ports(&self) -> HashMap<String, &OutputPort>;
+    fn thread_executor(&self);
     fn init(&self);
     fn shutdown(&self);
 }
+
+pub type BoxedBlock = Box<dyn Block + Send>;
 
 pub struct OutputPort {
     senders: Vec<Sender<Event>>
