@@ -3,6 +3,7 @@ use super::*;
 
 use std::collections::HashMap;
 use std::sync::mpsc::TryRecvError;
+use time;
 
 /// Here the Block implementations and a factory to build the various blocks
 /// starting from configuration
@@ -19,15 +20,22 @@ pub fn build_block(block_def: &ModelDefBlock) -> BoxedBlock {
 
 struct EventGenerator {
     id: String,
-    config: ModelDefEventGeneratorConfiguration
+    initial_instant: u64,
+    previous_instant: u64,
+    config: ModelDefEventGeneratorConfiguration,
+    period_ns: u64
 }
 
 impl EventGenerator {
     pub fn new(id: String, config: ModelDefEventGeneratorConfiguration) -> Self {
         debug!("EventGenerator: {:?}", config);
+        let frequency = config.frequency;
         EventGenerator {
             id,
-            config
+            initial_instant: 0,
+            previous_instant: 0,
+            config,
+            period_ns: (1_000_000_000.0 / frequency) as u64
         }
     }
 }
@@ -43,16 +51,20 @@ impl Block for EventGenerator {
     fn shutdown(&self) {
     }
 
-    fn thread_executor(&self, ports: BlockPorts) {
+    fn thread_executor(&mut self, ports: BlockPorts) {
         let out_port = ports.output_ports.get("out").unwrap();
         loop {
             match ports.system_port.receive() {
                 Ok(system_event) => match system_event.event_type {
-                    EventType::Start => debug!("EventGenerator {} Start Event", self.id()),
+                    EventType::Start => {
+                        debug!("EventGenerator {} Start Event", self.id());
+                        self.initial_instant = system_event.timestamp;
+                        self.previous_instant = system_event.timestamp;
+                    },
                     EventType::Stop => {
-                            debug!("EventGenerator {} Stop Event", self.id());
-                            return
-                        },
+                        debug!("EventGenerator {} Stop Event", self.id());
+                        return
+                    },
                     _ => ()
                 },
                 Err(TryRecvError::Empty) => self.process(out_port),
@@ -64,8 +76,20 @@ impl Block for EventGenerator {
 }
 
 impl EventGenerator {
-    fn process(&self, out_port: &OutputPort) {
-        // TODO
+    fn process(&mut self, out_port: &OutputPort) {
+        let now = time::precise_time_ns();
+        if now - self.previous_instant >= self.period_ns {
+            out_port.send(Event::new(now - self.initial_instant, self.get_event_type()));
+            self.previous_instant += self.period_ns;
+        }
+        thread::yield_now();
+    }
+
+    fn get_event_type(&self) -> EventType {
+        match self.config.event_type.as_ref() {
+            "Trigger" => EventType::Trigger,
+            _ => EventType::Trigger
+        }
     }
 }
 
@@ -95,8 +119,8 @@ impl Block for LoggingSink {
     fn shutdown(&self) {
     }
 
-    fn thread_executor(&self, ports: BlockPorts) {
-        let _in_port = ports.input_ports.get("in").unwrap();
+    fn thread_executor(&mut self, ports: BlockPorts) {
+        let in_port = ports.input_ports.get("in").unwrap();
         loop {
             match ports.system_port.receive() {
                 Ok(system_event) => match system_event.event_type {
@@ -107,9 +131,18 @@ impl Block for LoggingSink {
                         },
                     _ => thread::yield_now()
                 },
-                Err(TryRecvError::Empty) => thread::yield_now(),
+                Err(TryRecvError::Empty) => self.process(in_port),
                 Err(TryRecvError::Disconnected) => return
             }
         }
+    }
+}
+
+impl LoggingSink {
+    fn process(&self, in_port: &InputPort) {
+        if let Ok(event) = in_port.receive() {
+            info!("Logging event {:?} in sink {}", event, self.id());
+        }
+        thread::yield_now();
     }
 }

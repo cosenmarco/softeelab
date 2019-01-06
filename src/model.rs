@@ -6,6 +6,8 @@ use std::collections::HashMap;
 use std::sync::mpsc::{self, Sender, Receiver};
 use std::thread::{self, JoinHandle};
 use std::sync::{Mutex, Arc};
+use time;
+
 
 /// Here the basic building blocks of the Model
 
@@ -107,7 +109,7 @@ impl Model {
             let (sender, receiver): (Sender<Event>, Receiver<Event>) = mpsc::channel();
             self.system_channels.push(sender);
             let mut ports = all_ports.remove(&block_entry.0).unwrap();
-            let block = block_entry.1;
+            let mut block = block_entry.1;
             ports.system_port.set_receiver(receiver);
             self.threads.push(thread::spawn(move || {
                 debug!("Start thread for {}", block.id());
@@ -118,14 +120,16 @@ impl Model {
 
     fn send_start_events(&mut self) {
         debug!("Sending start events for {} channels", self.system_channels.len());
+        let start = time::precise_time_ns();
         for system_channel in self.system_channels.iter_mut() {
-            system_channel.send(Event::new(EventType::Start)).unwrap();
+            system_channel.send(Event::new(start, EventType::Start)).unwrap();
         }
     }
 
     fn send_stop_events(&mut self) {
+        let stop = time::precise_time_ns();
         for system_channel in self.system_channels.iter_mut() {
-            system_channel.send(Event::new(EventType::Stop)).unwrap();
+            system_channel.send(Event::new(stop, EventType::Stop)).unwrap();
         }
     }
 

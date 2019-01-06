@@ -11,7 +11,7 @@ pub enum EventType {
 
 #[derive(Copy, Clone, Debug)]
 pub struct Event {
-    pub timestamp: f64,
+    pub timestamp: u64, // Refers to start global system event
     pub corrected_timestamp: f64,
     pub event_type: EventType
     // TODO event metadata
@@ -19,9 +19,9 @@ pub struct Event {
 }
 
 impl Event {
-    pub fn new(event_type: EventType) -> Self {
+    pub fn new(timestamp: u64, event_type: EventType) -> Self {
         Event {
-            timestamp: 0.0,
+            timestamp,
             corrected_timestamp: 0.0,
             event_type
         }
@@ -36,7 +36,7 @@ pub struct BlockPorts {
 
 pub trait Block {
     fn id(&self) -> &str;
-    fn thread_executor(&self, ports: BlockPorts);
+    fn thread_executor(&mut self, ports: BlockPorts);
     fn init(&self);
     fn shutdown(&self);
 }
