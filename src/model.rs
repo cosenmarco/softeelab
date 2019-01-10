@@ -14,7 +14,7 @@ use time;
 pub struct Model {
     blocks: Vec<ModelDefBlock>,
     connections: Vec<ModelDefConnection>,
-    system_channels: Vec<Sender<Event>>,
+    system_channels: Vec<Sender<SystemEvent>>,
     threads: Vec<JoinHandle<()>>
 }
 
@@ -106,7 +106,7 @@ impl Model {
 
     fn start_threads(&mut self, all_blocks: &mut HashMap<String, BoxedBlock>, all_ports: &mut HashMap<String, BlockPorts>) {
         for block_entry in all_blocks.drain() {
-            let (sender, receiver): (Sender<Event>, Receiver<Event>) = mpsc::channel();
+            let (sender, receiver): (Sender<SystemEvent>, Receiver<SystemEvent>) = mpsc::channel();
             self.system_channels.push(sender);
             let mut ports = all_ports.remove(&block_entry.0).unwrap();
             let mut block = block_entry.1;
@@ -122,14 +122,14 @@ impl Model {
         debug!("Sending start events for {} channels", self.system_channels.len());
         let start = time::precise_time_ns();
         for system_channel in self.system_channels.iter_mut() {
-            system_channel.send(Event::new(start, EventType::Start)).unwrap();
+            system_channel.send(SystemEvent::Start(start)).unwrap();
         }
     }
 
     fn send_stop_events(&mut self) {
         let stop = time::precise_time_ns();
         for system_channel in self.system_channels.iter_mut() {
-            system_channel.send(Event::new(stop, EventType::Stop)).unwrap();
+            system_channel.send(SystemEvent::Stop).unwrap();
         }
     }
 

@@ -55,17 +55,16 @@ impl Block for EventGenerator {
         let out_port = ports.output_ports.get("out").unwrap();
         loop {
             match ports.system_port.receive() {
-                Ok(system_event) => match system_event.event_type {
-                    EventType::Start => {
+                Ok(system_event) => match system_event {
+                    SystemEvent::Start(timestamp) => {
                         debug!("EventGenerator {} Start Event", self.id());
-                        self.initial_instant = system_event.timestamp;
-                        self.previous_instant = system_event.timestamp;
+                        self.initial_instant = timestamp;
+                        self.previous_instant = timestamp;
                     },
-                    EventType::Stop => {
+                    SystemEvent::Stop => {
                         debug!("EventGenerator {} Stop Event", self.id());
                         return
-                    },
-                    _ => ()
+                    }
                 },
                 Err(TryRecvError::Empty) => self.process(out_port),
                 Err(TryRecvError::Disconnected) => return
@@ -100,8 +99,6 @@ struct LoggingSink {
 impl LoggingSink {
     pub fn new(id: String) -> Self {
         debug!("LoggingSink");
-        let mut in_ports = HashMap::new();
-        in_ports.insert("in".to_string(), InputPort::new());
         LoggingSink {
             id
         }
@@ -123,13 +120,12 @@ impl Block for LoggingSink {
         let in_port = ports.input_ports.get("in").unwrap();
         loop {
             match ports.system_port.receive() {
-                Ok(system_event) => match system_event.event_type {
-                    EventType::Start => debug!("LoggingSink {} Start Event", self.id()),
-                    EventType::Stop => {
+                Ok(system_event) => match system_event {
+                    SystemEvent::Start(_) => debug!("LoggingSink {} Start Event", self.id()),
+                    SystemEvent::Stop => {
                             debug!("LoggingSink {} Stop Event", self.id());
                             return
-                        },
-                    _ => thread::yield_now()
+                        }
                 },
                 Err(TryRecvError::Empty) => self.process(in_port),
                 Err(TryRecvError::Disconnected) => return
@@ -139,7 +135,7 @@ impl Block for LoggingSink {
 }
 
 impl LoggingSink {
-    fn process(&self, in_port: &InputPort) {
+    fn process(&self, in_port: &InputPort<Event>) {
         if let Ok(event) = in_port.receive() {
             info!("Logging event {:?} in sink {}", event, self.id());
         }

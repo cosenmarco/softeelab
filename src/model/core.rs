@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 use std::sync::mpsc::{Sender, Receiver, TryRecvError};
 
+#[derive(Copy, Clone, Debug)]
+pub enum SystemEvent {
+    Start(u64),
+    Stop
+}
 
 #[derive(Copy, Clone, Debug)]
 pub enum EventType {
-    Start,
-    Stop,
     Trigger
 }
 
@@ -29,8 +32,8 @@ impl Event {
 }
 
 pub struct BlockPorts {
-    pub system_port: InputPort,
-    pub input_ports: HashMap<String, InputPort>,
+    pub system_port: InputPort<SystemEvent>,
+    pub input_ports: HashMap<String, InputPort<Event>>,
     pub output_ports: HashMap<String, OutputPort>
 }
 
@@ -47,8 +50,8 @@ pub struct OutputPort {
     senders: Vec<Sender<Event>>
 }
 
-pub struct InputPort {
-    receiver: Option<Receiver<Event>>
+pub struct InputPort<T> {
+    receiver: Option<Receiver<T>>
 }
 
 impl OutputPort {
@@ -69,18 +72,18 @@ impl OutputPort {
     }
 }
 
-impl InputPort {
+impl<T> InputPort<T> {
     pub fn new() -> Self {
         InputPort {
             receiver: None
         }
     }
 
-    pub fn set_receiver(&mut self, receiver: Receiver<Event>) {
+    pub fn set_receiver(&mut self, receiver: Receiver<T>) {
         self.receiver = Some(receiver);
     }
 
-    pub fn receive(&self) -> Result<Event, TryRecvError> {
+    pub fn receive(&self) -> Result<T, TryRecvError> {
         match &self.receiver {
             Some(receiver) => receiver.try_recv(),
             None => Err(TryRecvError::Disconnected)
